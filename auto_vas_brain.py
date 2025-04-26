@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 import os
+import re
 import sys
 from re import search
 from tkinter import filedialog
@@ -97,24 +98,21 @@ class AutoVASBrain:
         ## ---------------------------- ENCONTRAR GATEWAY ------------------------------- ##
 
 
-    def encontrar_gateway(self, senha_sudo:str):
 
-        # Executando o traceroute e capturando a saída
+    def encontrar_gateway(self):
+        comando = "ip route show default"
+        saida = subprocess.run(comando, shell=True, capture_output=True, text=True)
+        saida = saida.stdout
 
-        comando = f'echo {senha_sudo} | sudo -S traceroute -I google.com'
+        # Exemplo de saída:
+        # default via 192.168.1.1 dev wlan0 proto dhcp metric 600 
 
-        saida_traceroute = subprocess.run(comando, shell=True, capture_output=True, text=True)
-        saida_traceroute = saida_traceroute.stdout
-
-
-        # Pegando o primeiro IP da lista (Gateway)
-        match = search(r'\n\s*1\s+_gateway\s+\((\d+\.\d+\.\d+\.\d+)\)', saida_traceroute)
+        match = re.search(r'default via (\d+\.\d+\.\d+\.\d+)', saida)
 
         if match:
             gateway_ip = match.group(1)
             print(f"Gateway encontrado: {gateway_ip}")
             return gateway_ip
-        
         else:
             print("Erro. Gateway não encontrado.")
 
