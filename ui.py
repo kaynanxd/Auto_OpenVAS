@@ -4,7 +4,6 @@ from tkinter import messagebox
 from tkinter.ttk import *
 from tkinter import simpledialog
 from tkinter import filedialog
-import time
 
 
 class AutoVASInterface:
@@ -61,14 +60,9 @@ class AutoVASInterface:
         self.setup_autovas = Button(text="Setup AutoVAS", command=self.setup)
         self.setup_autovas.grid(row=5, column=0, sticky="ew", pady=(20, 10))
 
-        #self.avancado = Button(text="Opções Avançadas", command=self.opc_avancadas)
-        #self.avancado.grid(row=5, column=2, sticky="ew", pady=(20, 10))
-
         self.relatorios = Button(text="Ver Relatórios", command=self.relatorio)
         self.relatorios.grid(row=5, column=1, sticky="ew", pady=(20, 10))
 
-        #self.filtrar_csv = Button(text="Filtrar CSV", command=self.filtrar_csv_funcao)
-        #self.filtrar_csv.grid(row=6, column=0, sticky="ew")
         self.one_click_scan_button = Button(text="Realizar Scan", command=self.oneclick_scan)
         self.one_click_scan_button.grid(row=7, column=0, columnspan=2, sticky="ew", padx=2, pady=10)
 
@@ -87,7 +81,6 @@ class AutoVASInterface:
 
         else:
             def setupautovas():
-                janela.destroy()
                 self.progress_window = Toplevel()
                 self.progress_window.config(padx=40, pady=20)
                 self.progress_window.resizable(width=False,height=False)
@@ -104,19 +97,26 @@ class AutoVASInterface:
 
             def atualizar():
                 janela.destroy()
-                self.opc_avancadas()
+                self.brain.atualizar_feed()
 
-            janela = Toplevel(self.window)
+            def instalaropenvasdocker():
+                janela.destroy()
+                self.brain.instalar_openvas_docker()
+
+            janela = Toplevel()
             janela.geometry("300x150")
             janela.resizable(False, False)
 
             label = Label(janela, text="Escolha uma opcao :", font=("calibre", 10, "normal"))
             label.pack(pady=10)
 
-            btn_setup = Button(janela, text="Instalar Depedencias", width=20, command=setupautovas)
+            btn_instalardocker = Button(janela, text="Instalar Docker", width=20, command=instalaropenvasdocker)
+            btn_instalardocker.pack(pady=5)
+
+            btn_setup = Button(janela, text="Preparar ambiente", width=20, command=setupautovas)
             btn_setup.pack(pady=5)
 
-            btn_atualizar = Button(janela, text="Atualizar Feed(Se necessario)", width=20, command=atualizar)
+            btn_atualizar = Button(janela, text="Atualizar Feed Scan", width=20, command=atualizar)
             btn_atualizar.pack(pady=5)
 
     
@@ -198,66 +198,51 @@ class AutoVASInterface:
         status_label.config(text = "Scan iniciado com sucesso!")
         self.progress_window.after(100, lambda: self.analisar_progresso_scan_ui(progress_bar, status_label, nome_task))
 
-        #self.progress_window.destroy()
-
-        #messagebox.showinfo(title = "Sucesso!", message = f"Operação concluída com sucesso. Task {self.nome_task} criada e iniciada!")
-
     def analisar_progresso_scan_ui(self,progress_bar, status_label,nome_task):
         self.senha_sudo = self.senha_sudo_entry.get()
         self.senha_openvas = self.senha_openvas_entry.get()
         self.id_container = self.brain.encontrar_gmvd_id(self.senha_sudo)
-
-        progress_bar['value'] -= 100
-        status_label.config(text = "Scan Em Progresso...")
         
 
-        while True:
-                relatorios = self.brain.gerar_relatorio(self.senha_openvas, self.senha_sudo, self.id_container)
-                encontrado = False
-                for relatorio in relatorios:
-                    if relatorio["task_name"] == nome_task:
-                        status = relatorio["status"]
-                        progress = relatorio["progress"]
-                        id = relatorio["id"]
+        def checar_progresso():
+            relatorios = self.brain.gerar_relatorio(self.senha_openvas, self.senha_sudo, self.id_container)
+            encontrado = False
 
-                        print(f"Status atual da task '{nome_task}': {status} - {progress}")
+            for relatorio in relatorios:
+                if relatorio["task_name"] == nome_task:
+                    status = relatorio["status"]
+                    progress = relatorio["progress"]
 
-                        # Atualiza o progress bar e o status_label
-                        try:
-                            valor_progress = int(progress.replace('%', ''))
-                            progress_bar['value'] = valor_progress
-                            status_label.config(text=f"Status: {status} - Progresso: {progress}")
-                        except ValueError:
-                            print("Erro ao converter progresso para inteiro.")
+                    print(f"Status atual da task '{nome_task}': {status} - {progress}")
 
-                        if progress == "100%" and status == "Done":
-                            print("Scan completo! Gerando Relatorio Agora...")
-                            self.salvar_relatorio(relatorio["id"], self.senha_sudo, self.id_container, self.senha_openvas, usar_csv=True, task_name=nome_task)
-                            return  # sai da função depois de completar
-                        encontrado = True
-                        break  # não precisa continuar procurando
+                    try:
+                        valor_progress = int(progress.replace('%', ''))
+                        progress_bar['value'] = valor_progress
+                        status_label.config(text=f"Status: {status} - Progresso: {progress}")
+                    except ValueError:
+                        print("Erro ao converter progresso para inteiro.")
 
-                # Espera 1 minuto antes de checar novamente
-                time.sleep(60)
+                    if progress == "100%" and status == "Done":
+                        print("Scan completo! Gerando Relatório Agora...")
+                        self.salvar_relatorio(relatorio["id"], self.senha_sudo, self.id_container, self.senha_openvas, usar_csv=True, task_name=nome_task)
+                        messagebox.showinfo(title = "Sucesso!", message = f"Operação concluída com sucesso. Task {self.nome_task} foi salva em relatorios/csv_bruto!")
+                        return 
+                    encontrado = True
+                    break
+
+            if not encontrado:
+                print(f"Task '{nome_task}' não encontrada ainda...")
+
+            # Marca para checar de novo em 60 segundos
+            self.progress_window.after(60000, checar_progresso)
+
+        status_label.config(text="Scan Em Progresso...")
+        progress_bar['value'] = 0
+        checar_progresso()
             
-
-    # ---------------------------- OPÇÕES AVANÇADAS (FUNCIONALIDADE FUTURA) ------------------------------- #
-
-    def opc_avancadas(self):
-        self.window = Toplevel()
-        self.window.wm_title("Opções avançadas")
-        self.window.config(padx=50, pady=30)
-        self.window.resizable(width=False, height=False)
-
-        self.titulo = Label(self.window, text= "Opções Avançadas", font = ("calibre", 20, "bold"))
-        self.titulo.grid(row=0,column=0, pady=30)
-
-        self.atualizar_openvas = Button(self.window, text = "Atualizar OpenVAS")
-        self.atualizar_openvas.grid(row = 1, column = 0)
    
     # ---------------------------- Ver Relatorios ------------------------------- #
     def salvar_relatorio(self, relatorio_id, senha_sudo: str, id_container: str, senha_openvas: str, usar_csv: bool, task_name: str):
-        self.window.withdraw()
         nome_do_arquivo = task_name
         self.brain.baixar_relatorio(relatorio_id, senha_sudo, id_container, senha_openvas, nome_do_arquivo, usar_csv)
 
@@ -282,21 +267,16 @@ class AutoVASInterface:
             for col, texto in enumerate(headers):
                 label = Label(self.window, text=texto, font=("calibre", 12, "bold"))
                 label.grid(row=0, column=col, sticky="nsew", padx=5, pady=5)
+                self.filtrar_arquivo = Button(self.window, text = "Selecionar Arquivo Externo e Filtrar",command=lambda :self.filtrar_csv_funcao(task_name="unknow", externo=True))
+                self.filtrar_arquivo.grid(row = 0, column = 5, pady = 2,padx=5, columnspan = 3)
 
             # Conteúdo dos relatórios
             for idx, relatorio in enumerate(relatorios):
-                ##Label(self.window, text=relatorio["id"], font=("calibre", 10), wraplength=250).grid(row=idx+1, column=0, sticky="w", padx=5, pady=2)
                 Label(self.window, text=relatorio["task_name"], font=("calibre", 10)).grid(row=idx+1, column=0, padx=5, pady=2)
                 Label(self.window, text=relatorio["creation_time"], font=("calibre", 10)).grid(row=idx+1, column=1, padx=5, pady=2)
-                ##Label(self.window, text=relatorio["modification_time"], font=("calibre", 10)).grid(row=idx+1, column=2, padx=5, pady=2)
                 Label(self.window, text=relatorio["status"], font=("calibre", 10)).grid(row=idx+1, column=2, padx=5, pady=2)
                 Label(self.window, text=relatorio["progress"], font=("calibre", 10)).grid(row=idx+1, column=3, padx=5, pady=2)
 
-                #self.filtrar_csv = Button(text="Filtrar CSV", command=self.filtrar_csv_funcao)
-                #self.filtrar_csv.grid(row=6, column=0, sticky="ew")
-
-                #btn_opcoes = Button(self.window, text="Opções do Relatório", command=lambda: self.abrir_janela_opcoes(relatorio, idx))
-                #btn_opcoes.grid(row=idx+1, column=5, padx=5, pady=2)
 
                 btn_filtrar_csv = Button(
                     self.window,text="CSV Filtrado",command=lambda task_name=relatorio["task_name"]: (self.salvar_relatorio(relatorio["id"], self.senha_sudo, self.id_container, self.senha_openvas, usar_csv=True, task_name=task_name),
@@ -306,26 +286,42 @@ class AutoVASInterface:
 
                 btn_baixar_csv = Button(
                     self.window,
-                    text="CSV Bruto",command=lambda task_name=relatorio["task_name"]: self.salvar_relatorio(relatorio["id"], self.senha_sudo, self.id_container, self.senha_openvas, usar_csv=True, task_name=task_name)
-                )
+                    text="CSV Bruto",
+                    command=lambda rid=relatorio["id"], task_name=relatorio["task_name"]: (self.salvar_relatorio(
+                        rid,
+                        self.senha_sudo, 
+                        self.id_container, 
+                        self.senha_openvas, 
+                        usar_csv=True, 
+                        task_name=task_name),
+                        messagebox.showinfo(
+                            title="Sucesso!", 
+                            message=f"Operação concluída com sucesso. Task {task_name} foi salva em relatorios/csv_bruto!"
+                        )
+                    )
+                ) 
                 btn_baixar_csv.grid(row=idx+1, column=5, padx=5, pady=2)
 
                 btn_baixar_excel = Button(
                     self.window,
-                    text="Excel",command=lambda task_name=relatorio["task_name"]: self.salvar_relatorio(relatorio["id"], self.senha_sudo, self.id_container, self.senha_openvas, usar_csv=False, task_name=task_name)
+                    text="Excel",
+                    command=lambda rid=relatorio["id"], task_name=relatorio["task_name"]: [
+                        self.salvar_relatorio(rid, self.senha_sudo, self.id_container, self.senha_openvas, usar_csv=False, task_name=task_name),
+                        messagebox.showinfo(
+                            title="Sucesso!", 
+                            message=f"Operação concluída com sucesso. Task {task_name} foi salva em relatorios/xlsx!"
+                        )
+                    ]
                 )
                 btn_baixar_excel.grid(row=idx+1, column=6, padx=5, pady=2)
 
+
     # ---------------------------- Filtrar csv ------------------------------- #
 
-    def filtrar_csv_funcao(self, task_name):
+    def filtrar_csv_funcao(self, task_name, externo=False):
         self.window = Toplevel()
         self.window.config(padx=50, pady=30)
         self.window.resizable(width=False, height=False)
-
-        #self.titulo = Label(self.window, text= "Filtrar CSV", font = ("calibre", 20, "bold"))
-        #self.titulo.grid(row=0,column=0, pady=30)
-
 
         colunas = ['IP', 'Hostname', 'Port', 'Port Protocol', 'CVSS', 'Severity', 'QoD', 'Solution Type', 'NVT Name', 'Summary', 'Specific Result', 'NVT QID',\
                    'CVEs', 'Task ID', 'Task Name', 'Timestamp', 'Result ID', 'Impact', 'Solution', 'Affected Software/OS', 'Vulnerability Insight',\
@@ -372,9 +368,10 @@ class AutoVASInterface:
             j += 1
             i += 1
 
-
-        self.filtrar_arquivo = Button(self.window, text = "Filtrar",command=lambda :self.filtrar_relatorio(filtros, task_name))
+        self.filtrar_arquivo = Button(self.window, text = "Filtrar", command=lambda: self.filtrar_relatorio(filtros, task_name) if not externo else self.filtrar_relatorio_externo(filtros))
         self.filtrar_arquivo.grid(row = 5, column = 7, pady = (20, 0), columnspan = 2)
+
+
     
 
     def filtrar_relatorio(self, filtros: list, task_name: str):
@@ -387,21 +384,30 @@ class AutoVASInterface:
         messagebox.showinfo(title = "Sucesso!", message = f"Arquivo {nome_do_arquivo} criado com sucesso! Salvo em relatorios/filtrado.")
         self.window.destroy()
 
+    def filtrar_relatorio_externo(self, filtros: list):
+        self.window.withdraw()
+
+        tipos_arquivo = [("CSV files", "*.csv")]
+
+        caminho = filedialog.askopenfilename(
+            title="Selecione um arquivo CSV",
+            filetypes=tipos_arquivo
+        )
+
+        nome_do_arquivo = simpledialog.askstring(title = "Nomeie o arquivo", prompt = "Digite o nome do arquivo:")
+
+        self.brain.filtrar_csv(filtros, nome_do_arquivo, caminho)
+
+        messagebox.showinfo(title = "Sucesso!", message = f"Arquivo {nome_do_arquivo} criado com sucesso! Salvo em relatorios/filtrado.")
+
     
     def add_item(self, vars:list, filtros: list, colunas: list):
-        i = 0
 
-        for var in vars:
-            if var.get() == 1:
-                filtros.append(colunas[i])
-            
-            if var.get() == 0 and (colunas[i] in filtros):
-                filtros.remove(colunas[i])
-                
-            i += 1
-        
-        filtros = list(dict.fromkeys(filtros))
+        selecionados = {colunas[i] for i, var in enumerate(vars) if var.get() == 1}
+
+        filtros.clear()
+        filtros.extend(selecionados)
+    
         print(filtros)
-            
-        
+
 
